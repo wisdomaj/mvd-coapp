@@ -32,7 +32,7 @@ PREFIX="$BUILD_DIR/prefix"
 OUTPUT_DIR="$ROOT_DIR/bin/$TARGET"
 
 # FFmpeg source
-FFMPEG_REPO="https://github.com/Suwot/FFmpeg.git"
+FFMPEG_REPO="https://github.com/wisdomaj/FFmpeg.git"
 FFMPEG_BRANCH="master"
 
 # Dependency versions
