@@ -10,8 +10,9 @@ set -e
 #
 # Output: bin/mac-arm64/ffmpeg, bin/mac-arm64/ffprobe
 #
-# Prerequisites:
-#   brew install cmake nasm pkg-config automake autoconf libtool
+# Prerequisites (auto-installed if missing):
+#   Homebrew, Xcode Command Line Tools
+#   cmake, nasm, pkg-config, automake, autoconf, libtool, meson (installed via brew)
 #
 # Usage:
 #   ./tools/build-ffmpeg-mac.sh              # full build (all deps + ffmpeg)
@@ -58,24 +59,41 @@ export MACOSX_DEPLOYMENT_TARGET="11.0"
 # ==============================================================================
 
 check_prerequisites() {
-    local missing=0
-    for tool in cmake nasm pkg-config git make; do
-        if ! command -v "$tool" &>/dev/null; then
-            log_error "Required tool '$tool' not found."
-            missing=1
+    # Ensure Homebrew is available
+    if ! command -v brew &>/dev/null; then
+        log_error "Homebrew not found. Install from https://brew.sh"
+        exit 1
+    fi
+
+    # Ensure Xcode Command Line Tools are installed
+    if ! command -v xcrun &>/dev/null || ! xcrun --find clang &>/dev/null 2>&1; then
+        log_info "Installing Xcode Command Line Tools..."
+        xcode-select --install 2>/dev/null || true
+        log_error "Xcode Command Line Tools are required. Please complete the installation and re-run."
+        exit 1
+    fi
+
+    # Install all required brew packages (skips already-installed ones)
+    local brew_deps=(cmake nasm pkg-config automake autoconf libtool meson create-dmg)
+    local to_install=()
+    for dep in "${brew_deps[@]}"; do
+        if ! command -v "$dep" &>/dev/null; then
+            to_install+=("$dep")
         fi
     done
 
-    if ! command -v xcrun &>/dev/null || ! xcrun --find clang &>/dev/null 2>&1; then
-        log_error "Xcode Command Line Tools not found. Install: xcode-select --install"
-        missing=1
+    if [ ${#to_install[@]} -gt 0 ]; then
+        log_info "Installing missing dependencies: ${to_install[*]}"
+        brew install "${to_install[@]}"
     fi
 
-    if [ $missing -eq 1 ]; then
-        log_error ""
-        log_error "Install missing tools: brew install cmake nasm pkg-config automake autoconf libtool"
-        exit 1
-    fi
+    # Verify critical tools are now available
+    for tool in cmake nasm pkg-config meson git make; do
+        if ! command -v "$tool" &>/dev/null; then
+            log_error "Required tool '$tool' still not found after install attempt."
+            exit 1
+        fi
+    done
 }
 
 # ==============================================================================

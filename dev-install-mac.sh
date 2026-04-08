@@ -14,13 +14,11 @@ set -e
 #   ./dev-install-mac.sh uninstall    # remove native messaging host registrations
 #   ./dev-install-mac.sh ffmpeg       # build FFmpeg with SVT-AV1 from source
 #
-# Prerequisites:
-#   - Node.js (brew install node)
-#   - Xcode Command Line Tools (xcode-select --install)
-#   - create-dmg (brew install create-dmg) — only for DMG packaging
-#   - FFmpeg binaries in bin/mac-arm64/ (ffmpeg, ffprobe)
-#     Build from source:  ./dev-install-mac.sh ffmpeg
-#     Prereqs for FFmpeg: brew install cmake nasm pkg-config automake autoconf libtool meson
+# Prerequisites (auto-installed if missing):
+#   - Homebrew (https://brew.sh)
+#   - Xcode Command Line Tools
+#   - Node.js, create-dmg (installed via brew)
+#   - FFmpeg binaries in bin/mac-arm64/ — build with: ./dev-install-mac.sh ffmpeg
 # ==============================================================================
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,30 +33,49 @@ log_warn()  { echo -e "\033[33m[WARN]\033[0m  $1"; }
 log_error() { echo -e "\033[31m[ERROR]\033[0m $1"; }
 
 check_prerequisites() {
-    local missing=0
-
-    if ! command -v node &>/dev/null; then
-        log_error "Node.js not found. Install: brew install node"
-        missing=1
+    # Ensure Homebrew is available
+    if ! command -v brew &>/dev/null; then
+        log_error "Homebrew not found. Install from https://brew.sh"
+        exit 1
     fi
 
+    # Ensure Xcode Command Line Tools are installed
     if ! command -v xcrun &>/dev/null || ! xcrun --find clang++ &>/dev/null 2>&1; then
-        log_error "Xcode Command Line Tools not found. Install: xcode-select --install"
-        missing=1
+        log_info "Installing Xcode Command Line Tools..."
+        xcode-select --install 2>/dev/null || true
+        log_error "Xcode Command Line Tools are required. Please complete the installation and re-run."
+        exit 1
     fi
 
+    # Install missing brew dependencies
+    local brew_deps=(node create-dmg)
+    local to_install=()
+    for dep in "${brew_deps[@]}"; do
+        if ! command -v "$dep" &>/dev/null; then
+            to_install+=("$dep")
+        fi
+    done
+
+    if [ ${#to_install[@]} -gt 0 ]; then
+        log_info "Installing missing dependencies: ${to_install[*]}"
+        brew install "${to_install[@]}"
+    fi
+
+    # Verify Node.js
+    if ! command -v node &>/dev/null; then
+        log_error "Node.js still not found after install attempt."
+        exit 1
+    fi
+
+    # Check FFmpeg binaries
     if [ ! -f "$BIN_SRC/ffmpeg" ] || [ ! -f "$BIN_SRC/ffprobe" ]; then
         log_error "FFmpeg binaries not found at $BIN_SRC/"
         log_error ""
         log_error "Build FFmpeg from source (includes SVT-AV1):"
         log_error "  ./dev-install-mac.sh ffmpeg"
         log_error ""
-        log_error "Requires: brew install cmake nasm pkg-config automake autoconf libtool meson"
-        log_error ""
-        missing=1
+        exit 1
     fi
-
-    [ $missing -eq 1 ] && exit 1
 }
 
 do_build() {
