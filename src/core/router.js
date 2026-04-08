@@ -87,8 +87,10 @@ async function detectHwEncoders() {
                     platforms.push({ id: platform.id, label: platform.label, codecs });
                 }
             }
-            logDebug(`[Router] Detected HW encoder platforms: ${platforms.map(p => p.id).join(', ') || 'none'}`);
-            resolve(platforms);
+            // Also detect which software AV1 encoder is available
+            const av1Encoder = stdout.includes('libsvtav1') ? 'libsvtav1' : stdout.includes('libaom-av1') ? 'libaom-av1' : null;
+            logDebug(`[Router] Detected HW encoder platforms: ${platforms.map(p => p.id).join(', ') || 'none'}, AV1 SW encoder: ${av1Encoder || 'none'}`);
+            resolve({ platforms, av1Encoder });
         });
         child.on('error', () => resolve([]));
         // Timeout after 5 seconds
@@ -168,9 +170,10 @@ export function initializeMessaging() {
     if (!status.success) protocol.send({ command: 'binary-status', ...status });
 
     // Non-blocking HW encoder detection
-    detectHwEncoders().then(platforms => {
-        if (platforms.length > 0) {
-            protocol.send({ command: 'hw-encoders', platforms });
+    detectHwEncoders().then(result => {
+        const { platforms, av1Encoder } = result;
+        if (platforms.length > 0 || av1Encoder) {
+            protocol.send({ command: 'hw-encoders', platforms, av1Encoder });
         }
     }).catch(err => {
         logDebug(`[Router] HW encoder detection failed: ${err.message}`);
