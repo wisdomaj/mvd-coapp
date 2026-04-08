@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { LOG_FILE, TEMP_DIR, APP_VERSION, IDLE_TIMEOUT, VALIDATION_SCHEMA } from '../utils/config';
+import { LOG_FILE, TEMP_DIR, APP_VERSION, IDLE_TIMEOUT, VALIDATION_SCHEMA, HW_ENCODER_PLATFORMS } from '../utils/config';
 import { logDebug, reportLogStatus, checkBinaries, getFreeDiskSpace, getConnectionInfo, CoAppError } from '../utils/utils';
 import { handleDownload } from '../handlers/downloader';
 import { handleFileSystem } from '../handlers/filesystem';
@@ -12,6 +12,7 @@ import { clearProcessing, getActiveProcessCount, setProcessCountCallback } from 
 const HANDLERS = {
     'download-v2': handleDownload,
     'cancel-download-v2': handleDownload,
+    'transcode': handleDownload,
     'fileSystem': handleFileSystem,
     'runTool': handleRunTool,
     'get-disk-space': async (req) => {
@@ -63,6 +64,36 @@ function validateRequest(request) {
             throw new CoAppError(`Missing required field: ${field}`, 'EINVAL');
         }
     }
+}
+
+async function detectHwEncoders() {
+    const toolPath = checkBinaries('ffmpeg');
+    return new Promise((resolve) => {
+        const { spawn } = require('child_process');
+        const child = spawn(toolPath, ['-encoders', '-hide_banner']);
+        let stdout = '';
+        child.stdout?.on('data', d => stdout += d.toString());
+        child.on('close', () => {
+            const platforms = [];
+            for (const [, platform] of Object.entries(HW_ENCODER_PLATFORMS)) {
+                const codecs = {};
+                for (const [codec, encoderName] of Object.entries(platform.codecMap)) {
+                    // Each encoder line looks like: " V..... h264_nvenc  ..."
+                    if (stdout.includes(encoderName)) {
+                        codecs[codec] = encoderName;
+                    }
+                }
+                if (Object.keys(codecs).length > 0) {
+                    platforms.push({ id: platform.id, label: platform.label, codecs });
+                }
+            }
+            logDebug(`[Router] Detected HW encoder platforms: ${platforms.map(p => p.id).join(', ') || 'none'}`);
+            resolve(platforms);
+        });
+        child.on('error', () => resolve([]));
+        // Timeout after 5 seconds
+        setTimeout(() => { try { child.kill(); } catch {} resolve([]); }, 5000);
+    });
 }
 
 export async function routeRequest(request, protocol) {
@@ -135,4 +166,13 @@ export function initializeMessaging() {
     // Non-blocking binary check
     const status = checkBinaries();
     if (!status.success) protocol.send({ command: 'binary-status', ...status });
+
+    // Non-blocking HW encoder detection
+    detectHwEncoders().then(platforms => {
+        if (platforms.length > 0) {
+            protocol.send({ command: 'hw-encoders', platforms });
+        }
+    }).catch(err => {
+        logDebug(`[Router] HW encoder detection failed: ${err.message}`);
+    });
 }

@@ -41,6 +41,7 @@ export const LOG_FILE = path.join(TEMP_DIR, 'mvdcoapp.log');
 export const IDLE_TIMEOUT = 30000;
 export const DEFAULT_TOOL_TIMEOUT = 30000;
 export const PREVIEW_TOOL_TIMEOUT = 40000;
+export const TRANSCODE_TOOL_TIMEOUT = 0; // No timeout — transcoding can take a long time
 export const LOG_MAX_SIZE = 10 * 1024 * 1024; // 10MB
 export const LOG_KEEP_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -72,9 +73,38 @@ export const WINDOWS_RESERVED_NAMES = new Set([
     'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
 ]);
 
+// 6. Hardware Encoder Detection
+export const HW_ENCODER_PLATFORMS = {
+    videotoolbox: {
+        id: 'videotoolbox',
+        label: 'Apple (VideoToolbox)',
+        encoders: ['h264_videotoolbox', 'hevc_videotoolbox'],
+        codecMap: { h264: 'h264_videotoolbox', h265: 'hevc_videotoolbox' }
+    },
+    nvenc: {
+        id: 'nvenc',
+        label: 'NVIDIA (NVENC)',
+        encoders: ['h264_nvenc', 'hevc_nvenc', 'av1_nvenc'],
+        codecMap: { h264: 'h264_nvenc', h265: 'hevc_nvenc', av1: 'av1_nvenc' }
+    },
+    amf: {
+        id: 'amf',
+        label: 'AMD (AMF)',
+        encoders: ['h264_amf', 'hevc_amf', 'av1_amf'],
+        codecMap: { h264: 'h264_amf', h265: 'hevc_amf', av1: 'av1_amf' }
+    },
+    qsv: {
+        id: 'qsv',
+        label: 'Intel (QSV)',
+        encoders: ['h264_qsv', 'hevc_qsv', 'av1_qsv', 'vp9_qsv'],
+        codecMap: { h264: 'h264_qsv', h265: 'hevc_qsv', av1: 'av1_qsv', vp9: 'vp9_qsv' }
+    }
+};
+
 export const VALIDATION_SCHEMA = {
     'download-v2': ['downloadId', 'argsBeforeOutput', 'saveDir'],
     'cancel-download-v2': ['downloadId'],
+    'transcode': ['downloadId', 'inputPath', 'transcode'],
     'fileSystem': ['operation'],
     'runTool': ['tool', 'args']
 };
