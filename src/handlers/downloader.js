@@ -120,7 +120,15 @@ async function startDownload(params, responder) {
     const stderr = String(spawnResult.stderr || '').split(/\r?\n|\r(?!\n)/).filter(Boolean).slice(-50).join('\n');
 
     // --- Post-download transcoding ---
-    if (spawnResult.success && fs.existsSync(finalPath) && params.transcode) {
+    // Transcode if the file exists and has content, even if FFmpeg exited non-zero.
+    // A live stream ending naturally (broadcaster goes offline) causes FFmpeg to exit
+    // with a non-zero code after exhausting reconnect retries, but the recorded file
+    // is still valid. Only skip transcoding if the user explicitly cancelled (signal/killed)
+    // or if no file was produced.
+    const fileExists = fs.existsSync(finalPath);
+    const fileHasContent = fileExists && fs.statSync(finalPath).size > 0;
+    const wasCancelled = spawnResult.key === 'USER_CANCELLED';
+    if (fileHasContent && !wasCancelled && params.transcode) {
         const transcodeResult = await runTranscode(downloadId, finalPath, params.transcode, responder);
 
         if (transcodeResult.success) {
@@ -224,7 +232,21 @@ async function runTranscode(downloadId, inputPath, transcodeParams, responder) {
         }
     } catch { /* proceed anyway if check fails */ }
 
-    responder.send({ command: 'transcode-started', downloadId });
+    // Probe input duration so the extension can show transcode progress %
+    let inputDuration = 0;
+    try {
+        const probeResult = await handleRunTool({
+            tool: 'ffprobe',
+            args: ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', inputPath],
+            timeoutMs: 10000,
+            job: { kind: 'probe' }
+        }, responder);
+        if (probeResult.success && probeResult.stdout) {
+            inputDuration = Math.round(parseFloat(probeResult.stdout.trim()));
+        }
+    } catch { /* proceed without duration */ }
+
+    responder.send({ command: 'transcode-started', downloadId, duration: inputDuration || 0 });
 
     const result = await executeTranscode(downloadId, inputPath, tempPath, args, responder);
 
