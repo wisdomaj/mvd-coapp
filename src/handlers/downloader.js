@@ -43,11 +43,18 @@ export async function handleDownload(request, responder) {
         const entry = activeDownloads.get(downloadId);
         if (!entry) return { success: false, from: command, downloadId, error: 'Not found', key: 'ENOENT' };
 
-        logDebug(`[Downloader] Canceling ${downloadId}`);
+        logDebug(`[Downloader] Canceling ${downloadId}${entry.isTranscode ? ' (transcode)' : ''}`);
         const { child } = entry;
         try { if (child.stdin?.writable) child.stdin.write('q\n'); } catch { /* ignore */ }
-        setTimeout(() => !child.killed && child.kill('SIGTERM'), 15000);
-        setTimeout(() => !child.killed && child.kill('SIGKILL'), 35000);
+        if (entry.isTranscode) {
+            // Transcode can be killed quickly — original file is always preserved
+            setTimeout(() => !child.killed && child.kill('SIGTERM'), 1000);
+            setTimeout(() => !child.killed && child.kill('SIGKILL'), 3000);
+        } else {
+            // Downloads need time to flush and finalize the file
+            setTimeout(() => !child.killed && child.kill('SIGTERM'), 15000);
+            setTimeout(() => !child.killed && child.kill('SIGKILL'), 35000);
+        }
         return { success: true, from: command, downloadId };
     }
 
@@ -283,7 +290,7 @@ async function executeTranscode(downloadId, inputPath, outputPath, args, respond
         job: { kind: 'download', id: downloadId },
         progressCommand: 'transcode-progress'
     }, responder, {
-        onSpawn: (child) => activeDownloads.set(downloadId, { child, finalPath: outputPath })
+        onSpawn: (child) => activeDownloads.set(downloadId, { child, finalPath: outputPath, isTranscode: true })
     });
 
     activeDownloads.delete(downloadId);
