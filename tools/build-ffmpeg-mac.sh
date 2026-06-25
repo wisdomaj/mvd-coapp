@@ -166,16 +166,18 @@ build_libvpx() {
         git clone --depth 1 --branch "$LIBVPX_VERSION" https://chromium.googlesource.com/webm/libvpx.git "$src"
     fi
     cd "$src"
+    # arm64-darwin-gcc targets iOS; use arm64-darwin20-gcc for macOS 11+
     ./configure \
         --prefix="$PREFIX" \
-        --target=arm64-darwin-gcc \
+        --target=arm64-darwin20-gcc \
         --enable-static \
         --disable-shared \
         --disable-examples \
         --disable-tools \
         --disable-unit-tests \
         --disable-docs \
-        --enable-vp9-highbitdepth
+        --enable-vp9-highbitdepth \
+        --extra-cflags="-isysroot $(xcrun --show-sdk-path)"
     make -j"$NPROC"
     make install
     log_info "libvpx done."
@@ -229,6 +231,7 @@ build_ogg() {
     fi
     cd "$src"
     autoreconf -fiv 2>/dev/null || true
+    sed -i '' 's/-force_cpusubtype_ALL//g' configure 2>/dev/null || true
     ./configure \
         --prefix="$PREFIX" \
         --enable-static \
@@ -247,6 +250,8 @@ build_vorbis() {
     fi
     cd "$src"
     autoreconf -fiv 2>/dev/null || true
+    # Patch: newer Xcode linker removed -force_cpusubtype_ALL
+    sed -i '' 's/-force_cpusubtype_ALL//g' configure 2>/dev/null || true
     ./configure \
         --prefix="$PREFIX" \
         --enable-static \
@@ -309,18 +314,24 @@ build_ffmpeg() {
     # Clean previous build if any
     make distclean 2>/dev/null || true
 
+    local sdk_path
+    sdk_path="$(xcrun --show-sdk-path)"
+
     ./configure \
         --arch="$ARCH" \
         --target-os=darwin \
         --cc="$(xcrun --find clang)" \
         --cxx="$(xcrun --find clang++)" \
+        --host-cc="$(xcrun --find clang)" \
+        --host-cflags="-isysroot $sdk_path" \
+        --host-ldflags="-isysroot $sdk_path" \
         --ar=ar \
         --nm=nm \
         --prefix="$BUILD_DIR/dist" \
         --pkg-config=pkg-config \
         --pkg-config-flags=--static \
-        --extra-cflags="-I$PREFIX/include -arch $ARCH" \
-        --extra-ldflags="-L$PREFIX/lib -L$PREFIX/lib64 -arch $ARCH" \
+        --extra-cflags="-I$PREFIX/include -arch $ARCH -isysroot $sdk_path" \
+        --extra-ldflags="-L$PREFIX/lib -arch $ARCH -isysroot $sdk_path" \
         --disable-ffplay \
         --disable-autodetect \
         --enable-version3 \
