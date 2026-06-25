@@ -303,16 +303,23 @@ function finalizeTranscode(_downloadId, inputPath, tempPath, dir, baseName, tran
         const inputSize = fs.existsSync(inputPath) ? fs.statSync(inputPath).size : 0;
         const outputSize = fs.existsSync(tempPath) ? fs.statSync(tempPath).size : 0;
 
-        // Rename transcoded file to final name
-        const finalName = ensureUniqueFilename(dir, `${baseName}${transcodeExt}`, isPathInUse);
-        const finalPath = path.resolve(dir, finalName);
-        fs.renameSync(tempPath, finalPath);
-
-        // Delete original if requested
-        if (deleteOriginal && fs.existsSync(inputPath) && inputPath !== finalPath) {
+        // Delete the original first (when requested) so the transcoded file can
+        // reclaim its name. The output often shares the original's name+extension
+        // (e.g. mp4 -> mp4), and uniquifying against a not-yet-deleted original
+        // would otherwise append " (1)". The transcode already succeeded, so the
+        // output is preserved at tempPath even if the rename below fails.
+        if (deleteOriginal && fs.existsSync(inputPath) && inputPath !== tempPath) {
             fs.unlinkSync(inputPath);
             logDebug(`[Transcode] Deleted original: ${inputPath}`);
         }
+
+        // Rename transcoded file to final name. When keeping the original, label
+        // the transcoded file "(compressed)" so the two are clearly distinguishable
+        // instead of getting an opaque " (1)" suffix.
+        const outputBase = deleteOriginal ? baseName : `${baseName} (compressed)`;
+        const finalName = ensureUniqueFilename(dir, `${outputBase}${transcodeExt}`, isPathInUse);
+        const finalPath = path.resolve(dir, finalName);
+        fs.renameSync(tempPath, finalPath);
 
         logDebug(`[Transcode] Complete: ${finalPath} (${inputSize} → ${outputSize})`);
         return {
